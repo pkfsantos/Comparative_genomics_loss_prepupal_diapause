@@ -1,0 +1,46 @@
+---
+title: "PGLS_Diapause_PTTH"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-01-26"
+---
+
+```{r}
+library(ape)
+library(caper)
+
+table <- read.csv("Traits_PGLS.csv", header = TRUE)
+table
+
+tree <- read.tree("SpeciesTree_rooted_Al_mesquitel.txt")
+plot(tree)
+
+table$Prepupae_Diapause <- as.factor(table$Prepupae_Diapause)
+table$Sociality <- as.factor(table$Sociality)
+
+comparative_data <- comparative.data(phy = tree, data = table, names.col = "Species")
+pgls_model1 <- pgls(PTTH.TORSO ~ Prepupae_Diapause + Sociality, data = comparative_data)
+summary(pgls_model1)
+
+pgls_model2 <- pgls(PTTH.TORSO ~ Prepupae_Diapause, data = comparative_data)
+summary(pgls_model2)
+
+pgls_model3 <- pgls(PTTH.TORSO ~ Sociality, data = comparative_data)
+summary(pgls_model3)
+
+# Checking for correlation between the independent variables
+# Create a contingency table
+contingency_table <- table(table$Prepupae_Diapause, table$Sociality)
+contingency_table
+
+# Perform Fisher's exact test rather than Chi-squared because of the small sample size
+fisher_test_result <- fisher.test(contingency_table)
+
+# Print the results
+print(fisher_test_result)
+
+#Hypothesis of independence is rejected (p < 0.05). There is a significant association 
+#between diapause stage and sociality.
+
+```
