@@ -1,0 +1,27 @@
+# Snakefile for running absrel in HyPhy
+
+# Define input data files
+tree_lab = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/hyphy_output/labeled_trees/"
+align_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/macse_output/"
+out_relax = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/hyphy_output/relax/"
+
+orthog_name, = glob_wildcards("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/macse_output/{id}_final_align_NT.aln")
+
+rule all:
+     input:expand(out_relax+"{name}_relax", name=orthog_name)
+
+# Rule to run RELAX
+rule run_relax:
+    input:
+        tree=tree_lab+"{name}_labeled",
+        alignment=align_dir+"{name}_final_align_NT.aln"
+    output:
+        out_relax+"{name}_relax"
+    resources: mem_mb = 6000
+    params: cpu = 2
+    shell:
+        """
+        $HOME/hyphy-2.5.55/hyphy LIBPATH=/uufs/chpc.utah.edu/common/home/u6021652/hyphy-2.5.55/res relax --tree {input.tree} \
+--multiple-hits Double+Triple --srv Yes --test Test --alignment {input.alignment} --models All --output {output}
+        """
+

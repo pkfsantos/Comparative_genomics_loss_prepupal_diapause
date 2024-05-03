@@ -1,0 +1,90 @@
+##snakefile for running busco and getting inputs for RERconverge
+####################################################################USER INPUT BEGIN#########################################################$
+#as input files you will need genomes (.fna) and annotation files (gff)
+####################################################################USER INPUT END###########################################################$
+#there are going to have two independent outputs: 1- busco output; 2- orthofinder output
+
+#directory with genome and annotation input files
+gen_annt_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/genomes_annotation/"
+
+#directory for CDS aminoacids sequences output
+cdsprot_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/"
+cdsprot_rn = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/"
+
+#directory for longest isoform output
+longiso_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/longest_isoform/"
+
+#directory for busco output
+busco_output = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/busco_output/"
+
+#I created a folder (all_Species_name) containing  text files named with all species 
+#it doesnt matter the content of the file. We need the species names to work as an "index" - {name} below
+species_name, = glob_wildcards("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/all_species_names/{species}")
+
+#rule all defines all finals and independent outputs (busco and orthofinder)
+rule all:
+     input:expand("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/busco_output/{name}_busco",name=species_name),"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthofinder_output/orthofinder_output_file"
+#in case of orthofinder, we use all the files in a folder as input and we want only one output when the job ends. No need to use expand 
+     
+#We are going to use the longest isoform to get CDS sequences and translate it into aminoacids for each species     
+#filter longest isoform in a gff file using AGAT
+rule longest_isoform:
+     input: gen_annt_dir+"{name}.gff"
+     output: longiso_dir+"{name}_longiso.gff"
+     resources: mem_mb = 21000
+     params:cpu = 7,
+            prefix = longiso_dir+"{name}_longiso.gff"
+     shell:"""
+           module load agat/0.9.2
+           agat_sp_keep_longest_isoform.pl -gff {input} -o {params.prefix} 
+           """
+
+#Extract CDS sequences and translate at the same time
+#it won't work for single line fasta. In this case use "fold input.fna > output.fna" to transform fasta for each line have 80 characters in size
+rule CDS_aminoacids:
+     input: longiso_dir+"{name}_longiso.gff"
+     output: cdsprot_rn+"{name}.fasta"
+     resources:	mem_mb = 21000
+     params: cpu = 7,
+             fasta = gen_annt_dir+"{name}.fna",
+             prefix = cdsprot_dir+"{name}_CDS_aas.fasta",
+             id = "{name}" 
+     shell:"""
+           module load agat/0.9.2
+           agat_sp_extract_sequences.pl	-g {input} -f {params.fasta} -t cds -p --roo --clean_final_stop -o {params.prefix}
+#add the respective species name at the beginning of each sequence
+           sed 's/>/>{params.id}_/g' /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/{params.id}_CDS_aas.fasta > {output}
+           """ 
+
+#Run BUSCO for protein coding sequences
+rule busco:
+     input:cdsprot_rn+"{name}.fasta"
+     output:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/busco_output/{name}_busco"
+     resources:mem_mb = 6000
+     params:cpu=1,
+           mode="prot",
+           lineage="hymenoptera_odb10",
+           prefix="{name}"
+     shell:""" 
+          module load busco/5.3.2
+          busco -i {input} -l {params.lineage} -m {params.mode} -o {params.prefix}
+          touch {output}
+          """
+
+#Run Orthofinder with all protein coding sequences as input
+rule orthofinder:
+     input:cdsprot_rn
+     output:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthofinder_output/orthofinder_output_file"
+     resources:mem_mb = 90000
+     params:cpu=30,
+            path = cdsprot_dir #for protein data
+     shell:"""
+           module load orthofinder
+#run orthofinder for prot sequences, "-os" to stop running after writing sequence files for orthogroups 
+#           orthofinder -f {input} -M msa -os 
+#re run with less species. In output folder WorkingDirectory comment out species in the file SpeciesIDs.txt
+           orthofinder -b /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/OrthoFinder/Results_Dec11 -M msa -os
+	   touch {output}
+           """ 
+
+

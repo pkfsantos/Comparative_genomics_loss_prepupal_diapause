@@ -1,0 +1,20 @@
+orthog_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/OrthoFinder/Results_Dec12/Orthogroups"
+
+rule all:
+     input:expand("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthofinder_output/orthofinder_output_file_tree")
+
+#Run Orthofinder with all protein coding sequences as input
+rule orthofinder:
+     input:orthog_dir
+     output:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthofinder_output/orthofinder_output_file_tree"
+     resources:mem_mb = 90000
+     params:cpu=30
+     shell:"""
+           module load orthofinder
+#run orthofinder for prot sequences, "-os" to stop running after writing sequence files for orthogroups 
+#           orthofinder -f {input} -M msa -os 
+#re run with less species. In output folder WorkingDirectory comment out species in the file SpeciesIDs.txt
+           orthofinder -fg /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/OrthoFinder/Results_Dec12 -M msa
+           touch {output}
+           """
+

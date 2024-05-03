@@ -1,0 +1,21 @@
+#To subset my alignments of interest, I made a list of IDs of interest and run this command in the folder of orthogroups
+#		while IFS= read -r file; do cp "$file" orthog_interest; done < orthog_interest_ID
+
+prot_alig_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/OrthoFinder/Results_Dec12/Orthogroup_Sequences/orthog_interest/"
+blast_out = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/blast_output/"
+
+orthog_name, = glob_wildcards("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/CDS_aas/CDS_aas_renamed/OrthoFinder/Results_Dec12/Orthogroup_Sequences/orthog_interest/{orthogroup}.fa")
+
+rule all:
+     input:expand(blast_out+"{name}_blastp_output", name=orthog_name)
+
+#blastp (protein to protein), input protein alignments
+rule blastp:
+     input: prot_alig_dir+"{id}.fa"
+     output:blast_out+"{id}_blastp_output"
+     resources:mem_mb = 3000
+     params:cpu=1
+     shell:"""
+          /uufs/chpc.utah.edu/common/home/u6021652/ncbi-blast-2.14.1+/bin/blastp -query {input} -max_target_seqs 1 -outfmt "6 qseqid qstart qend sstart send sseqid stitle pident length mismatch gaps evalue bitscore" -out {output} -evalue 1e-10 -db /uufs/chpc.utah.edu/common/home/u6021652/ncbi-blast-2.14.1+/inv_db
+          """
+

@@ -1,0 +1,31 @@
+#directory with gene alignments (output from macse)
+alg_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/macse_output/"
+#directory for gene trees output
+out_gtrees = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/trees/gene_trees/"
+#directory for empty files output
+out = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/empty_outputs/" 
+
+orthog_name, = glob_wildcards("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/macse_output/{orthogroup}_final_align_NT.aln")
+
+rule all:
+     input:expand(out+"{name}_NT_tree", name=orthog_name)
+
+#remove bases with that are more than 50% missing across all sequences, to increase proportion of bases that must be present use --prop
+#make trees using iqtree using macse output
+rule trees:
+     input: alg_dir+"{name}_final_align_NT.aln"
+     output: out+"{name}_NT_tree"
+     resources: mem_mb = 12000
+     params: cpu = 4,
+             id = "{name}"
+     shell:"""
+           module load gcc/8.5.0
+           module load intel-oneapi-mpi/2021.4.0
+           module load phyx/1.3
+           module load iqtree/2.2.0
+           cd /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/trees/gene_trees/
+           pxclsq --seqf {input} --outf {params.id}_filtered.fasta
+           iqtree2 -s {params.id}_filtered.fasta -st CODON -m MFP -B 1000 -T AUTO -ntmax 8 -seed 153426 --prefix {params.id}
+           touch {output}
+           """
+

@@ -1,0 +1,50 @@
+ortho_seq_dir = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/"
+
+#create index for orthogroup names (orthogroups used in MACSE)
+orthg_name, = glob_wildcards("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/alignments/subset_spp/{orthoname}_nucl_renamed.fa_dup_removed.fa")
+
+rule all:
+     input:expand("/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{id}_quotations.tsv", id = orthg_name)
+
+#run interproscan to get go terms for the genes of each orthogroup
+#for each orthogroup, grab the unique go terms and store them in txt files
+#non-zero exits from interproscan even with successful scan
+#Replaced all * to X using sed -i 's/\*/X/g' *
+rule interproscan:
+    input:ortho_seq_dir+"{id}_nucl_renamed.fa_dup_removed.fa"
+    output:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/{id}.tsv",
+    params:cpu=3,
+           ortho_id = "/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/{id}"
+    resources:mem_mb = 9000
+    shell:"""
+          module load interproscan/5.63
+          interproscan.sh -i {input} -t n  -appl CDD,Pfam,SUPERFAMILY,PANTHER -o {params.ortho_id}.tsv -f tsv --goterms --iprlookup
+          #echo $?
+          #exitcode=$?
+          #if [ $exitcode -eq 1 ]
+          #then
+          #    exit 1
+          #else
+          #    {output}
+          #    echo $?
+          #    exit 0
+          #fi
+          """
+
+#Making TopGO input file (background)
+rule topGO_input:
+    input:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/{id}.tsv"
+    output:"/uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{id}_quotations.tsv"
+    params:cpu=3,
+           ortho_id = "{id}"
+    resources:mem_mb = 9000
+    shell:"""
+          awk -F "\\t" '{{print $14}}' {input} > /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_only_GO_column.tsv
+          sed 's/|/,/g' /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_only_GO_column.tsv > /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_comma.tsv
+          sed 's/,/\\n/g' /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_comma.tsv > /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_oneColum.tsv
+          sort /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_oneColum.tsv | uniq > /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_uniq.tsv
+          sed -z 's/\\n/,/g;s/,$/\\n/' /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_uniq.tsv > /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_oneline.tsv
+          awk '{{print "\\""$0"\\""}}' /uufs/chpc.utah.edu/common/home/kapheim-group2/priscila/diapause_signatures/orthogroup_go_terms/topgo_input/{params.ortho_id}_oneline.tsv > {output}
+          """
+#On the command line I transformed all outputs in a table with file name in the first column and the content of each file in the second column (awk '{{print FILENAME,$1}}' *_quotation.tsv > TopGo_input.tsv
+#then I replaced all .tsv within the file (sed 's/\.tsv//g') and the delimiter from space to tab (sed 's/ /\t/g')
