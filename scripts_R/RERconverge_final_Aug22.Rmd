@@ -1,0 +1,118 @@
+---
+title: "RERconverge"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+PREPARING INPUT FILES (run on terminal)
+
+Alignments from single-copy orthologues (outputs from Orthofinder):
+  1. make a list of IDs based on the file names of the Single_Copy_Orthologue_Sequences folder (ls > singlecopyIDs.txt)
+  2. create a folder for the alignments of interest (mkdir singlecopy_alignments)
+  3. Subset in the new folder only the alignments of interest based on IDs. Run within folder with files to be copied (alignments).
+        while IFS= read -r file; do cp "$file" singlecopy_alignments; done < singlecopyIDs.txt
+        
+```{r}
+library(devtools)
+library(RERconverge)
+library(ape)
+library(parallel)
+```
+
+Make trees with equal topologies using phangorn. The input files are the alignments folder and the species tree (both from Orthofinder)
+Before running rename species name: 
+  1. In the tree file - removing _CDS_aas from each species name
+  2. To change sequences IDs from all alignments to match master tree: "sed -i 's/_CDS.*//g' *" (run within folder)
+```{r}
+#estimatePhangornTreeAll(alndir ="NT_alignments", pattern = ".aln",
+#                                          treefile = "SpeciesTree_rooted_mesquite.txt", 
+#                                      output.file = "input_rerconverge.txt", submodel = "GTR",
+#                                      type = "DNA", format = "fasta", k = 4)
+```
+
+I run the command below in the cluster and in parallel (snakemamke file)
+```{r}
+#estimatePhangornTreeAll(alndir ="NT_alignments_T", pattern = ".aln",
+#                                          treefile = "SpeciesTree_rooted_mesquite.txt", 
+#                                      output.file = "input_rerconverge.txt", submodel = "YN98",
+#                                      type = "CODON", format = "fasta", k = 4)
+
+```
+
+```{r}
+#minSpecs - minimum number of spp to calculate master tree
+ort_trees <- readTrees("rerconverge_input_codon.txt", reestimateBranches = F, minSpecs = 27) 
+#estimating relative evolutionary rates (RER) - min.sp minimum number of spp to compute RER
+mamRERw = getAllResiduals(ort_trees, transform = "sqrt", weighted = T, scale = T, min.sp = 16)
+```
+
+```{r}
+#Foreground species
+noDevDiap <- c("Frieseomelitta_varia","Tetragonula_carbonaria","Bombus_campestris","Megalopta_genalis","Halictus_rubicundus","Lasioglossum_morio","Sphecodes_monilicornis","Lasioglossum_leucozonium","Augochlora_pura","Augochlorella_aurata","Apis_mellifera","Bombus_vancouverensis","Ceratina_calcarata","Euglossa_dilemma","Melipona_quadrifasciata","Andrena_dorsata","Agapostemon_virescens")
+
+#sister_clades = (list("clade1"=c("Bombus_vancouverensis","Bombus_campestris","Melipona_quadrifasciata","Frieseomelitta_varia","Tetragonula_carbonaria","Apis_mellifera"), "clade2" =c("Lasioglossum_leucozonium","Lasioglossum_morio","Halictus_rubicundus","Sphecodes_monilicornis","Agapostemon_virescens","Augochlora_pura","Augochlorella_aurata","Megalopta_genalis")))
+
+#with common ancestor
+#noDevDiapb2a <- foreground2TreeClades(noDevDiap, sister_clades, ort_trees)
+
+#no ancestor
+noDevDiapb2a <- foreground2Tree(noDevDiap, ort_trees, clade="terminal", weighted = "F", transition = "unidirectional")
+
+noDevDiapplot <- plotTreeHighlightBranches(noDevDiapb2a, hlspecies = which(noDevDiapb2a$edge.length==1), hlcols="blue", main="Loss of developmental diapause")
+```
+
+```{r}
+#including common ancestor
+#phenVnoDevDiap <- tree2PathsClades(noDevDiapb2a,ort_trees)
+#cornoDevDiap <- correlateWithBinaryPhenotype(mamRERw, phenVnoDevDiap, weighted = "auto")
+#head(cornoDevDiap[order(cornoDevDiap$P),], n = 50)
+
+#no common ancestor
+phenVnoDevDiap <- tree2Paths(noDevDiapb2a,ort_trees)
+cornoDevDiap <- correlateWithBinaryPhenotype(mamRERw, phenVnoDevDiap, weighted = "auto")
+head(cornoDevDiap[order(cornoDevDiap$P),], n = 50)
+
+reordered <- cornoDevDiap[order(cornoDevDiap$p.adj),]
+#write.csv(reordered, file = "RER_ouput_one_per_genus.csv")
+
+hist(cornoDevDiap$P, breaks=15)
+
+```
+
+Permulations
+```{r}
+#perform binary CC permulation
+#sisters_list: a list object containing information on clades in the foreground set (pairs of sister species), specifically the pair(s) of "sister species" that branch out from the same ancestor
+
+root_sp = "Macropis_europaea"
+masterTree = ort_trees$masterTree
+
+#with common ancestor
+#permCC = getPermsBinary(1000, noDevDiap, sister_clades, root_sp, mamRERw, ort_trees, masterTree, permmode="cc")
+
+#no common ancestor
+permCC = getPermsBinary(1000, noDevDiap, sisters_list = NULL, root_sp, mamRERw, ort_trees, masterTree, permmode="cc")
+
+#calculate permulation p-values
+corpermpvals = permpvalcor(cornoDevDiap,permCC)
+corpermpvals
+
+histAlt <- hist(cornoDevDiap$P, breaks = 50, plot = FALSE)
+histNull <- hist(corpermpvals$permpval, breaks = 50, plot = FALSE)
+
+png(file="permulationCC_nosisters.png")
+plot(histNull, col = "blue", xlab = "pvalues", ylab = "count")
+plot(histAlt, col = "red", add = TRUE)
+legend("right", inset=.02,
+   c("Null(Permulations)","Observed"), fill=c("blue","red"), horiz=TRUE, cex=0.8)
+dev.off()
+
+#add permulation to real results
+reordered$permpval = corpermpvals$permpval[match(rownames(reordered), rownames(corpermpvals))]
+reordered$permpbaladj <- p.adjust(reordered$permpval, method ="BH")
+
+write.csv(reordered, file = "RER_permulation_NO_ancestor_Aug22.csv")
+```
