@@ -1,0 +1,59 @@
+# Define directories and patterns
+aln_dir = "../NT_alignments/"
+treefile = "../SpeciesTree_rooted_mesquite.txt"
+
+# Use glob_wildcards to generate a list of alignment names
+alignments, = glob_wildcards(aln_dir + "{index}.aln")
+
+rule all:
+    input: expand("output_{id}.txt", id=alignments)
+
+# Rule to estimate Phangorn tree for each alignment file
+rule estimate_phangorn_tree:
+    input:
+        aln_file = aln_dir + "{id}.aln",
+        treefile = treefile
+    output:
+        output_file = "output_{id}.txt"
+    resources: mem_mb = 3000
+    params:
+        numCores = 20,
+        cpu = 1
+    shell:
+        """
+        module load R/4.4.0
+        Rscript -e "
+        library(devtools);
+        library(RERconverge);
+        library(ape);
+        library(parallel);
+
+        # Define the number of cores to use
+        numCores <- {params.numCores}
+
+        # Function to estimate Phangorn tree
+        parallelEstimatePhangornTree <- function(file) {{
+          logFile <- paste0('log_', basename(file), '.txt')
+          sink(logFile, append = TRUE)
+          on.exit(sink())
+          cat('Starting processing of file:', file, '\\n')
+          result <- tryCatch({{
+            outputFile <- '{output.output_file}'
+            estimatePhangornTreeAll(alndir = dirname(file), pattern = basename(file),
+              treefile = '{input.treefile}', output.file = outputFile,
+              submodel = 'YN98', type = 'CODON', format = 'fasta', k = 4)
+            cat('Completed processing of file:', file, '\\n')
+            return(TRUE)
+          }}, error = function(e) {{
+            cat('Error in file:', file, '\\n')
+            cat('Error message:', conditionMessage(e), '\\n')
+            return(FALSE)
+          }})
+          return(result)
+        }}
+
+        # Run the function
+        parallelEstimatePhangornTree('{input.aln_file}')
+        "
+        """
+
